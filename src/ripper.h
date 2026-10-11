@@ -114,6 +114,7 @@ struct RipOptions {
     int maxInitRoutines = 20;
     int maxMailboxes = 48;
     bool includeSfx = true;
+    bool pal = false;           // PAL (50 Hz) region: NSF header flagged PAL, playback at 50 Hz / 1.66 MHz
     std::function<void(const std::string&)> progress; // status messages
     std::atomic<bool>* cancel = nullptr;
 };
@@ -175,10 +176,11 @@ std::string cfgStr(const BankCfg& c);
 
 // simple NSF player wrapper (for verification / audition)
 struct NsfPlayer {
-    NES nes; int expansion = 0; uint16_t init = 0, play = 0; int songs = 0; int speed = 16666; bool ok = false;
+    NES nes; int expansion = 0; uint16_t init = 0, play = 0; int songs = 0; int speed = 16666; bool pal = false; bool ok = false;
     std::string err; std::vector<uint8_t> initBanks; bool pendingInit = false;
     bool load(const std::vector<uint8_t>& nsf);
     bool selectTrack(int t);       // runs INIT
     bool frame(std::vector<SoundWrite>& writes); // runs PLAY, collects writes with cycle offsets
-    int cyclesPerFrame() const { return (int)(speed * 1.7897727); }
+    double cpuClock() const { return pal ? 1662607.0 : 1789772.7; }
+    int cyclesPerFrame() const { return (int)(speed * cpuClock() / 1000000.0); }
 };

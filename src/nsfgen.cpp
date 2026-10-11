@@ -493,7 +493,8 @@ NsfBuild Ripper::buildNsf(const std::vector<int>& sel, const std::string& title,
     f[0x6E] = speed & 0xFF; f[0x6F] = speed >> 8;
     for (int i = 0; i < 8; i++) f[0x70 + i] = (i == stubSlot) ? 0 : (uint8_t)pg2nsf[drv.playCfg[i] % prgPages];
     if (ramMode) { for (int i = 0; i < 8; i++) f[0x70 + i] = recs[0].empty() ? 0 : cfgs[recs[0][0]][i]; f[0x70 + stubSlot] = 0; }
-    f[0x78] = 19997 & 0xFF; f[0x79] = 19997 >> 8; f[0x7A] = 0; // NTSC
+    { int pspeed = (int)(19997.0 / playCallsPerFrame()); f[0x78] = pspeed & 0xFF; f[0x79] = pspeed >> 8; }
+    f[0x7A] = opt.pal ? 0x01 : 0x00;   // bit0: PAL (50 Hz) / NTSC (60 Hz); the driver's own update rate is kept in both speed fields
     f[0x7B] = (uint8_t)base.expansion;
     f.insert(f.end(), img.begin(), img.end());
     nb.file = f; nb.ok = true; nb.stubSlot = stubSlot; nb.banks = (int)pages.size() + 1 + dataBanks; nb.warnings = warn;
@@ -507,7 +508,8 @@ bool NsfPlayer::load(const std::vector<uint8_t>& nsf) {
     ok = false;
     if (nsf.size() < 128 || memcmp(nsf.data(), "NESM\x1a", 5)) { err = "not an NSF"; return false; }
     songs = nsf[6]; uint16_t loadAddr = nsf[8] | (nsf[9] << 8); init = nsf[10] | (nsf[11] << 8); play = nsf[12] | (nsf[13] << 8);
-    speed = nsf[0x6E] | (nsf[0x6F] << 8); if (speed == 0) speed = 16639; expansion = nsf[0x7B];
+    pal = (nsf[0x7A] & 1) != 0;
+    speed = pal ? (nsf[0x78] | (nsf[0x79] << 8)) : (nsf[0x6E] | (nsf[0x6F] << 8)); if (speed == 0) speed = pal ? 19997 : 16639; expansion = nsf[0x7B];
     std::vector<uint8_t> data(nsf.begin() + 128, nsf.end());
     nes.setupNsf(data, loadAddr, &nsf[0x70], expansion);
     initBanks.assign(nsf.begin() + 0x70, nsf.begin() + 0x78);
@@ -607,10 +609,10 @@ std::vector<int16_t> Ripper::renderNsf(const std::vector<uint8_t>& nsf, int trac
     std::vector<int16_t> out;
     NsfPlayer pl; if (!pl.load(nsf)) return out;
     if (!pl.selectTrack(track)) return out;
-    Synth syn; syn.reset(pl.expansion);
+    Synth syn; syn.setClock(pl.cpuClock()); syn.reset(pl.expansion);
     NES* np = &pl.nes; syn.setMemReader([np](uint16_t a) { return np->peek(a); });
     syn.write(0x4015, 0x0F); syn.write(0x4017, 0x40);
-    int cpf = pl.cyclesPerFrame(); int frames = (int)(seconds * 1789773.0 / cpf);
+    int cpf = pl.cyclesPerFrame(); int frames = (int)(seconds * pl.cpuClock() / cpf);
     std::vector<SoundWrite> ws;
     for (int f = 0; f < frames; f++) {
         if (!pl.frame(ws)) break;

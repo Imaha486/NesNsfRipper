@@ -8,6 +8,7 @@ class Synth {
 public:
     static constexpr int SAMPLE_RATE = 44100;
     static constexpr double CPU_CLOCK = 1789772.7;
+    void setClock(double hz) { cycPerSample = hz / SAMPLE_RATE; }
 
     Synth();
     void reset(int expansionFlags);

@@ -17,13 +17,13 @@ static void writeWav(const std::string& p, const std::vector<int16_t>& s) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) { fprintf(stderr, "usage: nsfrip_cli rom.nes outbase [--wav seconds] [--frames N] [--threads N] [--long N] [--nosfx]\n"); return 1; }
-    std::string rom = argv[1], out = argv[2]; double wavSec = 0; int frames = 2400, threads = 4, longF = 3600; bool sfx = true;
-    for (int i = 3; i < argc; i++) { std::string a = argv[i]; if (a == "--wav" && i + 1 < argc) wavSec = atof(argv[++i]); else if (a == "--frames" && i + 1 < argc) frames = atoi(argv[++i]); else if (a == "--threads" && i + 1 < argc) threads = atoi(argv[++i]); else if (a == "--long" && i + 1 < argc) longF = atoi(argv[++i]); else if (a == "--nosfx") sfx = false; }
+    if (argc < 3) { fprintf(stderr, "usage: nsfrip_cli rom.nes outbase [--wav seconds] [--frames N] [--threads N] [--long N] [--nosfx] [--pal]\n"); return 1; }
+    std::string rom = argv[1], out = argv[2]; double wavSec = 0; int frames = 2400, threads = 4, longF = 3600; bool sfx = true, pal = false;
+    for (int i = 3; i < argc; i++) { std::string a = argv[i]; if (a == "--wav" && i + 1 < argc) wavSec = atof(argv[++i]); else if (a == "--frames" && i + 1 < argc) frames = atoi(argv[++i]); else if (a == "--threads" && i + 1 < argc) threads = atoi(argv[++i]); else if (a == "--long" && i + 1 < argc) longF = atoi(argv[++i]); else if (a == "--nosfx") sfx = false; else if (a == "--pal") pal = true; }
     auto t0 = std::chrono::steady_clock::now();
     Ripper rip(readFile(rom));
     if (!rip.ok()) { fprintf(stderr, "load failed: %s\n", rip.error.c_str()); return 1; }
-    rip.opt.traceFrames = frames; rip.opt.threads = threads; rip.opt.longFrames = longF; rip.opt.includeSfx = sfx;
+    rip.opt.traceFrames = frames; rip.opt.threads = threads; rip.opt.longFrames = longF; rip.opt.includeSfx = sfx; rip.opt.pal = pal;
     rip.opt.progress = [](const std::string& s) { fprintf(stderr, "[%s]\n", s.c_str()); };
     printf("ROM: %s mapper %d (%s) PRG %zuK CHR %zuK\n", rom.c_str(), rip.base.mapper, rip.base.mapperName().c_str(), rip.base.prg.size() / 1024, rip.base.chr.size() / 1024);
     bool okA = rip.analyze();

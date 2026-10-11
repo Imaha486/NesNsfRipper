@@ -25,10 +25,10 @@
 #pragma comment(lib, "comdlg32.lib")
 
 enum { ID_EDIT_PATH = 100, ID_BTN_OPEN, ID_BTN_ANALYZE, ID_BTN_CANCEL, ID_LIST, ID_BTN_PLAY, ID_BTN_STOP, ID_BTN_SAVE, ID_BTN_CHECKALL, ID_BTN_CHECKNONE, ID_BTN_CHECKGOOD,
-       ID_EDIT_TITLE, ID_EDIT_ARTIST, ID_EDIT_COPY, ID_LOG, ID_STATUS, ID_CHK_SFX, ID_CHK_M3U, ID_EDIT_FRAMES, ID_BTN_VERIFY, ID_CHK_UNSAFE };
+       ID_EDIT_TITLE, ID_EDIT_ARTIST, ID_EDIT_COPY, ID_LOG, ID_STATUS, ID_CHK_SFX, ID_CHK_M3U, ID_EDIT_FRAMES, ID_BTN_VERIFY, ID_CHK_UNSAFE, ID_RAD_NTSC, ID_RAD_PAL };
 enum { WM_APP_PROGRESS = WM_APP + 1, WM_APP_DONE, WM_APP_PLAYPOS };
 
-static HWND g_hwnd, g_list, g_log, g_status, g_edPath, g_edTitle, g_edArtist, g_edCopy, g_btnAnalyze, g_btnCancel, g_btnPlay, g_btnStop, g_btnSave, g_chkSfx, g_chkM3u, g_edFrames, g_btnVerify, g_chkUnsafe;
+static HWND g_hwnd, g_list, g_log, g_status, g_edPath, g_edTitle, g_edArtist, g_edCopy, g_btnAnalyze, g_btnCancel, g_btnPlay, g_btnStop, g_btnSave, g_chkSfx, g_chkM3u, g_edFrames, g_btnVerify, g_chkUnsafe, g_radNtsc, g_radPal;
 static std::unique_ptr<Ripper> g_rip;
 static std::atomic<bool> g_cancel{ false };
 static std::thread g_worker;
@@ -84,7 +84,7 @@ struct Player {
     }
     void run() {
         NsfPlayer pl; if (!pl.load(nsf) || !pl.selectTrack(track)) { running = false; return; }
-        Synth syn; syn.reset(pl.expansion); NES* np = &pl.nes; syn.setMemReader([np](uint16_t a) { return np->peek(a); });
+        Synth syn; syn.setClock(pl.cpuClock()); syn.reset(pl.expansion); NES* np = &pl.nes; syn.setMemReader([np](uint16_t a) { return np->peek(a); });
         syn.write(0x4015, 0x0F); syn.write(0x4017, 0x40);
         int cpf = pl.cyclesPerFrame(); std::vector<SoundWrite> ws; std::vector<int16_t> pending;
         for (int i = 0; i < NBUF; i++) { buf[i].assign(BUFSAMP, 0); memset(&hdr[i], 0, sizeof(WAVEHDR)); hdr[i].lpData = (LPSTR)buf[i].data(); hdr[i].dwBufferLength = BUFSAMP * 2; waveOutPrepareHeader(hwo, &hdr[i], sizeof(WAVEHDR)); hdr[i].dwFlags |= WHDR_DONE; }
@@ -172,6 +172,7 @@ static void startAnalysis() {
 static NsfBuild buildFor(const std::vector<int>& sel) {
     wchar_t t[64], a[64], c[64]; GetWindowTextW(g_edTitle, t, 64); GetWindowTextW(g_edArtist, a, 64); GetWindowTextW(g_edCopy, c, 64);
     std::string title = wToAscii(t); if (title.empty()) title = "NSF rip";
+    g_rip->opt.pal = SendMessageW(g_radPal, BM_GETCHECK, 0, 0) == BST_CHECKED;
     return g_rip->buildNsf(sel, title, wToAscii(a), wToAscii(c));
 }
 
@@ -230,7 +231,8 @@ static void layout(HWND hwnd) {
     MoveWindow(g_btnCancel, W - 90 - 8, y, 90, 24, TRUE);
     y += 32;
     MoveWindow(GetDlgItem(hwnd, ID_EDIT_FRAMES - 1000), 8, y + 4, 140, 20, TRUE); MoveWindow(g_edFrames, 150, y, 60, 24, TRUE);
-    MoveWindow(g_status, 220, y + 4, W - 228, 20, TRUE);
+    MoveWindow(g_radNtsc, 222, y + 2, 100, 22, TRUE); MoveWindow(g_radPal, 326, y + 2, 90, 22, TRUE);
+    MoveWindow(g_status, 424, y + 4, W - 432, 20, TRUE);
     y += 32;
     int listH = (H - y - 8) * 55 / 100; if (listH < 120) listH = 120;
     MoveWindow(g_list, 8, y, W - 16, listH, TRUE);
@@ -261,7 +263,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         g_btnCancel = mk(L"BUTTON", L"中止", BS_PUSHBUTTON | WS_TABSTOP, ID_BTN_CANCEL); EnableWindow(g_btnCancel, FALSE);
         mk(L"STATIC", L"自動プレイ追跡フレーム数:", SS_LEFT, ID_EDIT_FRAMES - 1000);
         g_edFrames = mk(L"EDIT", L"2400", WS_BORDER | ES_NUMBER, ID_EDIT_FRAMES, WS_EX_CLIENTEDGE);
-        g_status = mk(L"STATIC", L"ROMファイルを開いて「解析開始」を押してください", SS_LEFT | SS_NOPREFIX, ID_STATUS);
+        g_radNtsc = mk(L"BUTTON", L"NTSC 60Hz", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, ID_RAD_NTSC); SendMessageW(g_radNtsc, BM_SETCHECK, BST_CHECKED, 0);
+        g_radPal = mk(L"BUTTON", L"PAL 50Hz", BS_AUTORADIOBUTTON, ID_RAD_PAL);
+        g_status = mk(L"STATIC", L"ROMファイルを開いて「解析開始」を押してください", SS_LEFT | SS_NOPREFIX | WS_GROUP, ID_STATUS);
         g_list = mk(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_TABSTOP, ID_LIST, WS_EX_CLIENTEDGE);
         ListView_SetExtendedListViewStyle(g_list, LVS_EX_FULLROWSELECT | LVS_EX_CHECKBOXES | LVS_EX_GRIDLINES);
         addColumn(0, L"#", 40); addColumn(1, L"種別", 80); addColumn(2, L"信頼度", 100); addColumn(3, L"長さ", 110); addColumn(4, L"ch", 110); addColumn(5, L"起動手順 (NSF INIT の動作)", 400); addColumn(6, L"NSF検証", 120); addColumn(7, L"備考", 260);
